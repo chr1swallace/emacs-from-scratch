@@ -76,8 +76,7 @@
     :states '(normal insert visual emacs)
     :keymaps 'override
     :prefix "SPC" ;; set leader
-    :non-normal-prefix "M-SPC") ;; access leader in insert mode
-
+    :non-normal-prefix "M-SPC")
   ;; set up ',' as the local leader key
   (general-create-definer cw/local-leader-keys
     :states '(normal insert visual emacs)
@@ -93,9 +92,9 @@
 
   (cw/leader-keys
     "SPC" '(execute-extended-command :wk "execute command") ;; an alternative to 'M-x'
+    "M-SPC" '(execute-extended-command :wk "execute command") ;; an alternative to 'M-x'
     "TAB" '(:keymap tab-prefix-map :wk "tab") ;; remap tab bindings
     ";" '(eval-expression :which-key "eval sexp"))
-
 
   (cw/leader-keys
     "c" '(:ignore t :wk "code"))
@@ -157,6 +156,10 @@
     "nl" #'org-store-link
     "nm" #'org-tags-view
     "nn" #'org-capture
+    ;; "ns" #'org-journal-search ;; this will prompt for a date range
+    "ns" '(lambda () (interactive)
+                  (let ((current-prefix-arg '(4))) ; C-u
+                  (call-interactively 'org-journal-search))) ;; this will search all journal files
     "nt" #'org-todo-list) ;; agenda
 
   ;; search
@@ -218,8 +221,8 @@
     (define-key evil-normal-state-map [escape] 'keyboard-quit)
     (evil-define-key 'insert global-map (kbd "C-j") 'evil-next-line)
     (evil-define-key 'insert global-map (kbd "C-k") 'evil-previous-line)
-    (evil-define-key 'insert global-map (kbd "C-l") 'evil-forward-char)
-    (evil-define-key 'insert global-map (kbd "C-h") 'evil-backward-char)
+    ;; (evil-define-key 'insert global-map (kbd "C-l") 'evil-forward-char)
+    ;; (evil-define-key 'insert global-map (kbd "C-h") 'evil-backward-char)
     
     (add-hook 'text-mode-hook 'turn-on-visual-line-mode)
     ;; but retain C-k killing as normal
@@ -317,6 +320,8 @@
     "s I" '(consult-imenu-multi :wk "imenu")
     "s o" '(consult-outline :which-key "outline")
     "s s" 'consult-line
+    "s f" 'consult-recent-file
+    "f r" 'consult-recent-file
     "s p" '(consult-ripgrep :wk "ripgrep project")
     "b b" 'consult-buffer
     ;; TODO consult mark
@@ -731,8 +736,15 @@ color cycled from `my-remote-buffer-colors'."
 	    "+" #'org-capture
 	    "j" #'org-agenda-next-line
 	    "h" #'org-agenda-previous-line)
+  :general
+  (general-define-key
+   :states 'insert
+   :map 'org-mode-map
+   "M-<return>" #'org-insert-item))
+
+
 ;; (use-package evil-org
-;;   :ensure t)
+;;   :ensure t)th
 ;; (general-define-key ; :after evil-org
 ;;  :states '(normal insert)
 ;;       "C-c c" #'org-capture
@@ -774,7 +786,15 @@ color cycled from `my-remote-buffer-colors'."
     "s" #'ess-switch-process
     "f" #'ess-eval-function-or-paragraph
     "r" #'ess-eval-region-)
-  (add-to-list 'display-buffer-alist
+  ;; Open Rdired buffer with F9:
+  (add-hook 'ess-r-mode-hook
+	    '(lambda ()
+	       (local-set-key (kbd "<f9>") #'ess-rdired)))
+  ;; Close Rdired buffer with F9 as well:
+  (add-hook 'ess-rdired-mode-hook
+	    '(lambda ()
+	       (local-set-key (kbd "<f9>") #'kill-buffer-and-window)))
+(add-to-list 'display-buffer-alist
 	       `("*R"
 		 (display-buffer-reuse-window display-buffer-in-side-window)
 		 (side . left)
@@ -853,6 +873,11 @@ color cycled from `my-remote-buffer-colors'."
 (setq reftex-cite-format "\\cite{%l}"
       cdlatex-paired-parens "")
 
+(use-package darkroom
+  :config
+  (require 'darkroom))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (custom-set-variables
@@ -861,7 +886,7 @@ color cycled from `my-remote-buffer-colors'."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-selected-packages
-   '(origami page-break-lines orderless evil-surround helpful org which-key vertico use-package org-journal mood-line key-chord general evil-vimish-fold evil-snipe evil-org evil-matchit evil-commentary ess deft)))
+   '(darkroom darkroom-mode writeroom-mode writeroom olivetti origami page-break-lines orderless evil-surround helpful org which-key vertico use-package org-journal mood-line key-chord general evil-vimish-fold evil-snipe evil-org evil-matchit evil-commentary ess deft)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
