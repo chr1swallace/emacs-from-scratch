@@ -5,7 +5,7 @@
   (setq use-package-enable-imenu-support t)
   (require 'use-package))
 ;; to always use ensure
-;; (setq use-package-always-ensure t)
+ ;; (setq use-package-always-ensure t)
 (add-to-list 'package-archives
              '("melpa" . "https://melpa.org/packages/"))
 
@@ -29,6 +29,7 @@
 	display-line-numbers-type t)
   ;;  Allow me to load files that are named in the current buffer
   (autoload 'find-file-at-point "ffap" nil t)
+  (server-start)
   (defalias 'yes-or-no-p 'y-or-n-p) ;; life is too short
   (tool-bar-mode -1) ;; disables toolbar
   (scroll-bar-mode -1) ;; disables toolbar
@@ -54,6 +55,9 @@
   (global-set-key [f8] #'align)
   )
 
+;; generate mouse-2 events by pressing Command when clicking with the trackpad.
+(if (eq system-type 'darwin)
+(define-key key-translation-map (kbd "<s-mouse-1>") (kbd "<mouse-2>")))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; appearance
 (setq custom-theme-load-path
@@ -154,6 +158,7 @@
     "nd" #'deft
     "nj" #'org-journal-new-entry
     "nl" #'org-store-link
+    "nL" #'org-insert-link
     "nm" #'org-tags-view
     "nn" #'org-capture
     ;; "ns" #'org-journal-search ;; this will prompt for a date range
@@ -180,10 +185,15 @@
   (general-nmap ; default is global
     "<" #'backward-page
     ">" #'forward-page)
+    :init
+    (setq evil-undo-system 'undo-redo)
+  
   :config
   (progn
     (evil-mode 1)
     
+    ;; iESS just doesn't work in evil mode, don't understand why
+    (add-to-list 'evil-emacs-state-modes 'inferior-ess-r-mode)
     ;; dired has too many good bindings to change for evil
     (add-to-list 'evil-emacs-state-modes 'dired-mode)
     (add-to-list 'evil-emacs-state-modes 'easy-jekyll-mode)
@@ -663,6 +673,7 @@ color cycled from `my-remote-buffer-colors'."
 
 (use-package org
   :config
+  (require 'org-tempo) ; allow <q, <c etc
   (defun cw/org-journal-find-location ()
     ;; Open today's journal, but specify a non-nil prefix argument in order to
     ;; inhibit inserting the heading; org-capture will insert the heading.
@@ -670,6 +681,8 @@ color cycled from `my-remote-buffer-colors'."
     (unless (eq org-journal-file-type 'daily)
       (org-narrow-to-subtree))
     (goto-char (point-max)))
+  (add-to-list 'org-file-apps '("\\.docx\\'" . "open %s"))
+  (add-to-list 'org-file-apps '("\\.pptx\\'" . "open %s"))
   (setq org-refile-file (format "%s/refile.org" org-directory)
 	;; level 1 files, that I might refile to
 	cw/org-files1 (apply #'append `((,(concat org-directory "/habits.org"))
@@ -715,9 +728,10 @@ color cycled from `my-remote-buffer-colors'."
   (cw/local-leader-keys
     :keymaps 'org-mode-map
     "a" '(org-archive-subtree :wk "archive")
-    "l" '(:ignore t :wk "link")
-    "ll" '(org-insert-link t :wk "link")
-    "lp" '(org-latex-preview t :wk "prev latex")
+    ;; "l" '(:ignore t :wk "link")
+    "l" '(org-insert-link t :wk "link")
+    "L" '(org-mac-link-get-link t :wk "link to a mac file")
+    ;; "lp" '(org-latex-preview t :wk "prev latex")
     "h" '(consult-org-heading :wk "consult heading")
     "d" '(org-cut-special :wk "org cut special")
     "y" '(org-copy-special :wk "org copy special")
@@ -742,6 +756,7 @@ color cycled from `my-remote-buffer-colors'."
    :map 'org-mode-map
    "M-<return>" #'org-insert-item))
 
+(use-package org-mac-link)
 
 ;; (use-package evil-org
 ;;   :ensure t)th
@@ -770,6 +785,59 @@ color cycled from `my-remote-buffer-colors'."
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(use-package markdown-mode
+  :ensure t
+  :mode ("README\\.md\\'" . gfm-mode)
+  :init (setq markdown-command "pandoc"))
+
+(use-package cdlatex)
+
+(use-package latex
+  :ensure auctex
+    :mode
+    ("\\.tex\\'" . latex-mode)
+    :bind
+    (:map LaTeX-mode-map
+          ("M-<delete>" . TeX-remove-macro)
+          ("C-c C-r" . reftex-query-replace-document)
+          ("C-c C-g" . reftex-grep-document))
+    :init
+    ;; A function to delete the current macro in AUCTeX.
+    ;; Note: keybinds won't be added to TeX-mode-hook if not kept at the end of the AUCTeX setup!
+    (defun TeX-remove-macro ()
+        "Remove current macro and return TRUE, If no macro at point, return Nil."
+        (interactive)
+        (when (TeX-current-macro)
+            (let ((bounds (TeX-find-macro-boundaries))
+                  (brace  (save-excursion
+                              (goto-char (1- (TeX-find-macro-end)))
+                              (TeX-find-opening-brace))))
+                (delete-region (1- (cdr bounds)) (cdr bounds))
+                (delete-region (car bounds) (1+ brace)))
+            t))
+    (add-hook 'LaTeX-mode-hook #'LaTeX-math-mode)
+    :config
+    (setq-default TeX-master t ; by each new fie AUCTEX will ask for a master fie.
+                  TeX-PDF-mode t
+                  TeX-engine 'xetex)     ; optional
+    (setq TeX-auto-save t
+          TeX-save-query nil       ; don't prompt for saving the .tex file
+          TeX-parse-self t
+          TeX-show-compilation nil         ; if `t`, automatically shows compilation log
+          LaTeX-babel-hyphen nil ; Disable language-specific hyphen insertion.
+          ;; `"` expands into csquotes macros (for this to work, babel pkg must be loaded after csquotes pkg).
+          LaTeX-csquotes-close-quote "}"
+          LaTeX-csquotes-open-quote "\\enquote{"
+          TeX-file-extensions '("Rnw" "rnw" "Snw" "snw" "tex" "sty" "cls" "ltx" "texi" "texinfo" "dtx"))
+
+    ;; Font-lock for AuCTeX
+    ;; Note: '«' and '»' is by pressing 'C-x 8 <' and 'C-x 8 >', respectively
+    (font-lock-add-keywords 'latex-mode (list (list "\\(«\\(.+?\\|\n\\)\\)\\(+?\\)\\(»\\)" '(1 'font-latex-string-face t) '(2 'font-latex-string-face t) '(3 'font-latex-string-face t))))
+    ;; Add standard Sweave file extensions to the list of files recognized  by AuCTeX.
+    (add-hook 'LaTeX-mode-hook #'turn-on-cdlatex)
+    (add-hook 'TeX-mode-hook (lambda () (reftex-isearch-minor-mode))))
+
+
 (use-package key-chord)
 ;; emacs speaks statistics, tramp
 (use-package ess
@@ -786,6 +854,18 @@ color cycled from `my-remote-buffer-colors'."
     "s" #'ess-switch-process
     "f" #'ess-eval-function-or-paragraph
     "r" #'ess-eval-region-)
+  (general-def
+    :states '(emacs)
+    [up]  'comint-previous-matching-input-from-input
+    [down]  'comint-next-matching-input-from-input)
+;; ess-roxy-update-entry
+(setq ess-roxy-template-alist '(("description" . " content for description")
+                            ("details" . "content for details")
+                            ("title" . "")
+                            ("param" . "")
+                            ("return" . "")
+                            ("export" . "")
+                            ("author" . "Chris Wallace")))
   ;; Open Rdired buffer with F9:
   (add-hook 'ess-r-mode-hook
 	    '(lambda ()
@@ -811,7 +891,7 @@ color cycled from `my-remote-buffer-colors'."
 						   (insert "\n```{r}\n\n```\n")
 						   (previous-line 2)))
 			       ;; (key-chord-define-local ">>" (lambda () (interactive) (insert " %>% ")))
-			       ;; (key-chord-define-local "<>" (lambda () (interactive) (insert " %<>% ")))
+			       ;; (key-chord-define-local "<>" (lambda () (teractive) (insert " %<>% ")))
 			       ;; (turn-on-orgstruct)
 			       ;; (setq-local orgstruct-heading-prefix-regexp "## ")
 			       (setq ess-eval-visibly-p 'nowait) ;; no waiting while ess evalating
@@ -819,17 +899,16 @@ color cycled from `my-remote-buffer-colors'."
 			       )))
 (use-package tramp
   :config
-  ;; Another way to find the remote path is to use the path assigned to the remote
+  ;; Another way to find the remote path is to use the path assigned to the remote 
   ;; user by the remote host. TRAMP does not normally retain this remote path
   ;; after login. However, tramp-own-remote-path preserves the path value, which
   ;; can be used to update tramp-remote-path.
   (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
   ;; When TRAMP cleans a connection, it removes the respective remote file name(s) from recentf-list. This is needed, because an unresponsive remote host could trigger recentf to connect that host again and again.
   ;; If you find the cleanup disturbing, because the file names in recentf-list are precious to you, you could add the following two forms in your ~/.emacs after loading the tramp and recentf packages:
-  ;; (remove-hook 'tramp-cleanup-connection-hook #'tramp-recentf-cleanup)
-  ;; (remove-hook 'tramp-cleanup-all-connections-hook #'tramp-recentf-cleanup-all)
+  (remove-hook 'tramp-cleanup-connection-hook #'tramp-recentf-cleanup)
+  (remove-hook 'tramp-cleanup-all-connections-hook #'tramp-recentf-cleanup-all)
   ;; (remove-hook 'kill-emacs-hook #'recentf-cleanup) ;; doom adds this
-  
   (setq
    ;; I tend to use magit anyway, but disable VC mode over TRAMP
    vc-ignore-dir-regexp (format "\\(%s\\)\\|\\(%s\\)"
@@ -840,6 +919,9 @@ color cycled from `my-remote-buffer-colors'."
   ;; Auto-saves tramp files on our local file system
   (add-to-list 'backup-directory-alist
 	       (cons tramp-file-name-regexp "~/.emacs.d/tramp-saves")))
+
+(use-package
+  sql-impala)
 
 (use-package project
   :general
@@ -885,8 +967,10 @@ color cycled from `my-remote-buffer-colors'."
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(org-agenda-files
+   '("/Users/cw029707/OneDrive/org/journal/202212.org" "/Users/cw029707/OneDrive/org/journal/202301.org" "/Users/cw029707/OneDrive/org/journal/202302.org" "/Users/cw029707/OneDrive/org/journal/202303.org"))
  '(package-selected-packages
-   '(darkroom darkroom-mode writeroom-mode writeroom olivetti origami page-break-lines orderless evil-surround helpful org which-key vertico use-package org-journal mood-line key-chord general evil-vimish-fold evil-snipe evil-org evil-matchit evil-commentary ess deft)))
+   '(cdlatex CDLaTeX auctex markdown-mode sql-impala darkroom darkroom-mode writeroom-mode writeroom olivetti origami page-break-lines orderless evil-surround helpful org which-key vertico use-package org-journal mood-line key-chord general evil-vimish-fold evil-snipe evil-org evil-matchit evil-commentary ess deft)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
