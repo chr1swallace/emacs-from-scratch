@@ -26,7 +26,8 @@
 	user-mail-address "cew54@cam.ac.uk"
 	;; This determines the style of line numbers in effect. If set to `nil', line
 	;; numbers are disabled. For relative line numbers, set this to `relative'.
-	display-line-numbers-type t)
+	display-line-numbers-type t
+	text-scale-mode-step 1.1)
   ;;  Allow me to load files that are named in the current buffer
   (autoload 'find-file-at-point "ffap" nil t)
   (server-start)
@@ -64,8 +65,12 @@
       '(custom-theme-directory t "~/.emacs.d/emacs-color-theme-solarized"))
 (load-theme 'solarized t)
 ;; (load-theme 'modus-vivendi)
-(setq-default line-spacing 0.25
+(setq-default line-spacing 0.3
 	      line-height 1.25)
+  ;; (setq-default line-spacing 6)
+;; (set-face-attribute 'default nil :font "DejaVu Sans Mono")
+(set-face-attribute 'default nil :family "Inconsolata" :height 130)
+;; (set-face-attribute 'default nil :family "Anonymous Pro" :height 140)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; NOTE: We need to load general before evil, otherwise the :general keyword in the use-package blocks won't work.
@@ -127,6 +132,7 @@
     "fo" '((lambda () (interactive) (find-file org-directory)) :wk orgdir)
     "f4" '((lambda () (interactive) (find-file (concat org-directory "/42.org"))) :wk "42.org")
     "fP" '((lambda () (interactive) (find-file "~/.emacs.d/init.el")) :wk "emacs-config")
+    "ft" '((lambda () (interactive) (find-file (concat org-directory "/tracker.org"))) :wk "tracker.org")
     "fs" #'save-buffer
     "fw" #'write-file
     )
@@ -155,14 +161,16 @@
   (cw/leader-keys
     "n" '(:ignore t :wk "notes")
     "na" #'org-agenda
+    "nc" #'org-download-clipboard
     "nd" #'deft
     "nj" #'org-journal-new-entry
+    "nJ" #'org-journal-view-entry
     "nl" #'org-store-link
     "nL" #'org-insert-link
     "nm" #'org-tags-view
     "nn" #'org-capture
     ;; "ns" #'org-journal-search ;; this will prompt for a date range
-    "ns" '(lambda () (interactive)
+    "nS" '(lambda () (interactive)
                   (let ((current-prefix-arg '(4))) ; C-u
                   (call-interactively 'org-journal-search))) ;; this will search all journal files
     "nt" #'org-todo-list) ;; agenda
@@ -191,9 +199,9 @@
   :config
   (progn
     (evil-mode 1)
-    
     ;; iESS just doesn't work in evil mode, don't understand why
     (add-to-list 'evil-emacs-state-modes 'inferior-ess-r-mode)
+    (setq evil-undo-system "undo-redo")
     ;; dired has too many good bindings to change for evil
     (add-to-list 'evil-emacs-state-modes 'dired-mode)
     (add-to-list 'evil-emacs-state-modes 'easy-jekyll-mode)
@@ -312,14 +320,18 @@
 
 
 
+ ;; Optionally use the `orderless' completion style.
 (use-package orderless
-  :custom
-  (completion-styles '(orderless basic))
-  (completion-category-overrides '((file (styles basic partial-completion)))))
+  :init
+  ;; Configure a custom style dispatcher (see the Consult wiki)
+  ;; (setq orderless-style-dispatchers '(+orderless-consult-dispatch orderless-affix-dispatch)
+  ;;       orderless-component-separator #'orderless-escapable-split-on-space)
+  (setq completion-styles '(substring orderless basic)
+        completion-category-defaults nil
+        completion-category-overrides '((file (styles partial-completion))))) 
 
 ;; Example configuration for Consult
 (use-package consult
-  
   ;; Replace bindings. Lazily loaded due by `use-package'.
   :general
   (general-nmap
@@ -404,9 +416,61 @@
   )
 
 (use-package vertico           ; the search engine of the future
+  :after general
   :init
-  (vertico-mode))
+  (vertico-mode)
+;;   (keymap-set vertico-map "?" #'minibuffer-completion-help)
+;; (keymap-set vertico-map "M-RET" #'minibuffer-force-complete-and-exit)
+;; (keymap-set vertico-map "M-TAB" #'minibuffer-complete)
+;; Use `consult-completion-in-region' if Vertico is enabled.
+;; Otherwise use the default `completion--in-region' function.
+(setq completion-in-region-function
+      (lambda (&rest args)
+        (apply (if vertico-mode
+                   #'consult-completion-in-region
+                 #'completion--in-region)
+               args))))
 
+(use-package marginalia
+  :general
+  (:keymaps 'minibuffer-local-map
+   "M-A" 'marginalia-cycle)
+  :custom
+  (marginalia-max-relative-age 0)
+  (marginalia-align 'right)
+  :init
+  (marginalia-mode))
+
+(use-package all-the-icons-completion
+  :after (marginalia all-the-icons)
+  :hook (marginalia-mode . all-the-icons-completion-marginalia-setup)
+  :init
+  (all-the-icons-completion-mode))
+;; https://kristofferbalintona.me/posts/202202211546/
+;; Workaround for problem with `tramp' hostname completions. This overrides
+;; the completion style specifically for remote files! See
+;; https://github.com/minad/vertico#tramp-hostname-completion
+(defun kb/basic-remote-try-completion (string table pred point)
+  (and (vertico--remote-p string)
+       (completion-basic-try-completion string table pred point)))
+(defun kb/basic-remote-all-completions (string table pred point)
+  (and (vertico--remote-p string)
+       (completion-basic-all-completions string table pred point)))
+(add-to-list 'completion-styles-alist
+             '(basic-remote           ; Name of `completion-style'
+               kb/basic-remote-try-completion kb/basic-remote-all-completions nil))
+(use-package corfu
+  :general
+  (:keymaps 'corfu-map
+   :states 'insert
+   "C-n" #'corfu-next
+   "C-p" #'corfu-previous
+   "<escape>" #'corfu-quit
+   "<return>" #'corfu-insert
+   "M-d" #'corfu-show-documentation
+   "M-l" #'corfu-show-location)
+  :config
+  (corfu-global-mode))
 
 
 (use-package page-break-lines
@@ -423,7 +487,7 @@
    (setq hl-todo-highlight-punctuation ":"
         hl-todo-keyword-faces
         '(;; For reminders to change or add something at a later date.
-          ("TODO" warning bold)
+          ;; ("TODO" warning bold)
           ;; For code (or code paths) that are broken, unimplemented, or slow,
           ;; and may become bigger problems later.
           ("FIXME" error bold)
@@ -683,12 +747,31 @@ color cycled from `my-remote-buffer-colors'."
     (goto-char (point-max)))
   (add-to-list 'org-file-apps '("\\.docx\\'" . "open %s"))
   (add-to-list 'org-file-apps '("\\.pptx\\'" . "open %s"))
-  (setq org-refile-file (format "%s/refile.org" org-directory)
+  (setq org-hide-emphasis-markers t
+	org-startup-with-inline-images t
+	;; Edit settings
+	org-auto-align-tags t
+	;; org-tags-column -80
+	org-catch-invisible-edits 'show-and-error
+	org-special-ctrl-a/e t
+	org-insert-heading-respect-content t
+	;; Org styling, hide markup etc.
+	org-hide-emphasis-markers t
+	org-pretty-entities t
+	;; org-ellipsis "…"
+	org-todo-keywords
+	'((sequence "TODO(t)" "WAIT(w)" "|" "DONE(d)")
+	  (sequence "READ(r)" "|" "DONE(d)"))
+	;; Agenda styling
+	org-agenda-tags-column 0
+	;; org-agenda-block-separator ?─
+	;; org-image-actual-width (truncate (* (display-pixel-width) 0.8))
+	org-refile-file (format "%s/refile.org" org-directory)
 	;; level 1 files, that I might refile to
 	cw/org-files1 (apply #'append `((,(concat org-directory "/habits.org"))
-					,(file-expand-wildcards (concat org-directory "/Collab/[a-zA-Z0-9]*.org"))
-					,(file-expand-wildcards (concat org-directory "/Admin/[a-zA-Z0-9]*.org"))
-					,(file-expand-wildcards (concat org-directory "/Projects/[a-zA-Z0-9]*.org"))))
+					;; ,(file-expand-wildcards (concat org-directory "/Collab/[a-zA-Z0-9_-]*.org"))
+					,(file-expand-wildcards (concat org-directory "/Admin/[a-zA-Z0-9_-]*.org"))
+					,(file-expand-wildcards (concat org-directory "/Projects/[a-zA-Z0-9_-]*.org"))))
 	;; journal files - for the agenda but not refile targets - current and previous year
 	cw/org-files2 (apply #'append `(,(file-expand-wildcards (concat org-journal-dir "/2022*.org"))
 					,(file-expand-wildcards (concat org-journal-dir "/2023*.org"))))
@@ -775,13 +858,35 @@ color cycled from `my-remote-buffer-colors'."
 	org-journal-file-format "%Y%m.org"
 	org-journal-date-format "%A, %d/%m/%y"
 	org-journal-time-format "%d/%m"
-	org-journal-carryover-items 'nil))
+	org-journal-carryover-items 'nil)
+  (defun org-journal-view-entry ()
+  ;; Open today's journal, but specify a non-nil prefix argument in order to
+  ;; inhibit inserting the heading; org-capture will insert the heading.
+	   (interactive)
+    (org-journal-new-entry t))
+  )
+(use-package org-download
+  :after org
+  :config
+  ;; Drag-and-drop to `dired`
+  (add-hook 'dired-mode-hook 'org-download-enable)
+   :general
+  (cw/leader-keys
+    "nc" #'org-download-clipboard))
+(use-package org-modern
+  :config
+  (global-org-modern-mode))
 
 (use-package deft
   :config
   (setq deft-extensions '("org")
 	deft-directory org-directory
 	deft-recursive t))
+
+(use-package markdown-mode
+  :ensure t
+  :mode ("README\\.md\\'" . gfm-mode))
+  ;; :init (setq markdown-command "multimarkdown"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -952,28 +1057,29 @@ color cycled from `my-remote-buffer-colors'."
 ;; latex
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(setq reftex-cite-format "\\cite{%l}"
-      cdlatex-paired-parens "")
+(use-package tex
+  :ensure auctex
+  :config
+  (setq TeX-view-program-selection
+	'(((output-dvi has-no-display-manager)
+  "dvi2tty")
+ ((output-dvi style-pstricks)
+  "dvips and gv")
+ (output-dvi "xdvi")
+ (output-pdf "okular")
+ (output-html "xdg-open"))))
+
+(use-package reftex
+  :config
+  (setq reftex-cite-format "\\cite{%l}"
+	cdlatex-paired-parens ""))
 
 (use-package darkroom
   :config
   (require 'darkroom))
 
+(server-start)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(org-agenda-files
-   '("/Users/cw029707/OneDrive/org/journal/202212.org" "/Users/cw029707/OneDrive/org/journal/202301.org" "/Users/cw029707/OneDrive/org/journal/202302.org" "/Users/cw029707/OneDrive/org/journal/202303.org"))
- '(package-selected-packages
-   '(cdlatex CDLaTeX auctex markdown-mode sql-impala darkroom darkroom-mode writeroom-mode writeroom olivetti origami page-break-lines orderless evil-surround helpful org which-key vertico use-package org-journal mood-line key-chord general evil-vimish-fold evil-snipe evil-org evil-matchit evil-commentary ess deft)))
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- )
+(setq custom-file (concat user-emacs-directory "custom.el"))
+(load custom-file 'noerror)
